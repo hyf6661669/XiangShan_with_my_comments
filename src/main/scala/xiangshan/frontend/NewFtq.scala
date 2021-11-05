@@ -458,7 +458,9 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
   val flush = stage2Flush || RegNext(stage2Flush)
 
   val allowBpuIn, allowToIfu = WireInit(false.B)
+  // Unused
   val flushToIfu = !allowToIfu
+  // IFU/Backend/Rob未产生任何的redirect/flush信号时, FTQ才能从BPU接收新的pc, 以及向IFU输出下一个要取的指令pc
   allowBpuIn := !ifuFlush && !robFlush.valid && !stage2Redirect.valid && !stage3Redirect.valid
   allowToIfu := !ifuFlush && !robFlush.valid && !stage2Redirect.valid && !stage3Redirect.valid
 
@@ -468,20 +470,25 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
   // **********************************************************************
   // **************************** enq from bpu ****************************
   // **********************************************************************
+  // new_entry_ready = validEntries < 64
   val new_entry_ready = validEntries < FtqSize.U
+  // FTQ能接受BPU新的预测结果
   io.fromBpu.resp.ready := new_entry_ready
 
   val bpu_s2_resp = io.fromBpu.resp.bits.s2
   val bpu_s3_resp = io.fromBpu.resp.bits.s3
   val bpu_s2_redirect = bpu_s2_resp.valid && bpu_s2_resp.hasRedirect
   val bpu_s3_redirect = bpu_s3_resp.valid && bpu_s3_resp.hasRedirect
-
+  // 猜测bpuPtr是FTQ里记录bpu预测的下一个要取的FetchBlock的地址相关信息的指针
   io.toBpu.enq_ptr := bpuPtr
+  // FTQ记录BPU产生的一个新的预测结果
   val enq_fire = io.fromBpu.resp.fire() && allowBpuIn // from bpu s1
+  // FTQ从BPU接收一个新的预测结果(pc)
   val bpu_in_fire = (io.fromBpu.resp.fire() || bpu_s2_redirect || bpu_s3_redirect) && allowBpuIn
-
+  // 选择BPU中有效的redirect信号
   val bpu_in_resp = WireInit(io.fromBpu.resp.bits.selectedResp)
   val bpu_in_stage = WireInit(io.fromBpu.resp.bits.selectedRespIdx)
+  // ftq接收的bpu中的信息在ftq中的ptr
   val bpu_in_resp_ptr = Mux(bpu_in_stage === BP_S1, bpuPtr, bpu_in_resp.ftq_idx)
   val bpu_in_resp_idx = bpu_in_resp_ptr.value
 
@@ -742,7 +749,7 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
   fromIfuRedirect.bits.ftqIdx := pdWb.bits.ftqIdx
   fromIfuRedirect.bits.ftqOffset := pdWb.bits.misOffset.bits
   fromIfuRedirect.bits.level := RedirectLevel.flushAfter
-
+  // Cfi = Control flow instruction
   val ifuRedirectCfiUpdate = fromIfuRedirect.bits.cfiUpdate
   ifuRedirectCfiUpdate.pc := pdWb.bits.pc(pdWb.bits.misOffset.bits)
   ifuRedirectCfiUpdate.pd := pdWb.bits.pd(pdWb.bits.misOffset.bits)
@@ -848,7 +855,7 @@ class Ftq(implicit p: Parameters) extends XSModule with HasCircularQueuePtrHelpe
   }
 
   // only the valid bit is actually needed
-  io.toIfu.redirect := DontCare
+  io.toIfu.redirect := Mux(robFlush.valid, robFlush.bits, stage2Redirect.bits)
   io.toIfu.redirect.valid := stage2Flush
 
   // commit

@@ -236,7 +236,7 @@ class FakeBPU(implicit p: Parameters) extends XSModule with HasBPUConst {
   when (io.ftq_to_bpu.redirect.valid) {
     s0_pc := io.ftq_to_bpu.redirect.bits.cfiUpdate.target
   }
-
+  // 不产生redirect信号的时候, BPU每个周期都能产生1个预测结果
   io.bpu_to_ftq.resp.valid := !reset.asBool() && !io.ftq_to_bpu.redirect.valid
 
   io.bpu_to_ftq.resp.bits := 0.U.asTypeOf(new BranchPredictionBundle)
